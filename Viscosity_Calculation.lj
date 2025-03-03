@@ -1,0 +1,56 @@
+# Initial setup and definitions
+units real
+boundary p p p
+atom_style full
+pair_style lj/cut/coul/long 10.0 10.0
+kspace_style pppm 0.00001
+bond_style harmonic
+angle_style harmonic
+dihedral_style opls
+improper_style harmonic
+read_data interface3.data
+include system.in.init
+include system.in.settings
+include system.in.charges
+
+# Equilibration and thermalization
+variable Tinit equal 300.0
+velocity all create ${Tinit} 102486 mom yes rot yes dist gaussian
+fix NVT all nvt temp ${Tinit} ${Tinit} 10 drag 0.2
+run 8000
+unfix NVT
+
+# Setup for production run with NPT ensemble
+velocity all create 300.0 4928459 rot yes dist gaussian
+fix 1 all npt temp 300 300 5.0 iso 1 1 2000.0 drag 1.0
+timestep 1
+thermo 1000
+run 300000
+write_data interface4.data pair ij
+
+# Additional setups for viscosity calculation in NVE ensemble
+reset_timestep 0
+variable T equal 300
+variable s equal 100
+variable p equal 1000
+variable d equal 10
+variable convert equal 1.0
+variable kB equal 0.001987
+variable dt equal 1.0
+variable V equal vol
+
+velocity all create $T 102486 mom yes rot yes dist gaussian
+fix NVE all nve
+fix SS all ave/correlate $s $p $d v_pxy v_pxz v_pyz type auto file S0St.dat ave running
+variable scale equal ${convert}/(${kB}*$T)*$V*$s*${dt}
+variable v11 equal trap(f_SS[3])*${scale}
+variable v22 equal trap(f_SS[4])*${scale}
+variable v33 equal trap(f_SS[5])*${scale}
+thermo_style custom step temp press v_pxy v_pxz v_pyz v_v11 v_v22 v_v33
+run 100000
+unfix SS
+
+# Calculation and print of viscosity
+variable v equal (v_v11+v_v22+v_v33)/3.0
+variable ndens equal count(all)/vol
+print "average viscosity: $v [Pa.s] @ $T K, ${ndens} atoms/A^3"
